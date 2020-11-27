@@ -1,17 +1,16 @@
-# Websockets over Actix Web (Rust)
+# WebSockets in Actix Web full tutorial - WebSockets & Actors
 
-This tutorial will walk you through each step of writing a blazingly fast WebSocket client in Actix Web, in depth with a working repository as refrence.
+This tutorial will walk you through each step of writing a blazingly fast WebSocket client in Actix Web, in depth and with a working repository as refrence.
 
-We'll be building a simple chatroom that echos messages to everyone in a room, and include private messages. I'll also explain every step, so you can extend this example and write your own WebSocket server in Actix Web.
+We'll be building a simple chatroom that echos messages to everyone in a room, and include private messages. I'll also explain every step, so you can extend this example and write your own WebSocket server in Actix Web. WebSockets in Actix heavily uses the Actor framework, something that you don't need to be too familiar with to write Actix Web - but will add another tool into your Rusty toolbelt.
 
 ### Prerequisites:
-1. Know what WebSocketsts are at a general level. (hint: they're bidirectional communication channels)
+1. Know what WebSockets are at a general level
 2. Know some basic Rust
 
-TODO
-Repo for the completed project:
+Repo for the completed project: `https://github.com/antholeole/actix-sockets`
 
-Video version of this tutorial:
+Video version of this tutorial coming out soon! If you want to get notified when the video comes out, leave a comment and I'll let you know :)
 
 
 ## The setup
@@ -24,9 +23,6 @@ actix-web="3.2.0" # duh
 actix-web-actors="3" # actors specific to web
 actix = "0.10.0" # actors
 uuid = { version = "0.8", features = ["v4", "serde"] } # uuid's fit well in this context.
-
-# optional, for hot reloading of the server.
-listenfd = "0.3"
 ```
 
 you might want to `cargo run` the hello world and go make a coffee; compiling all these crates will take a minute or two.
@@ -55,14 +51,18 @@ the first step will be to define our WebSocket object. create a file called `ws.
 
 ```
 use actix::{fut, ActorContext};
-use crate::messages::{Disconnect, Connect, WsMessage}; //We'll be writing this later
+use crate::messages::{Disconnect, Connect, WsMessage, ClientActorMessage}; //We'll be writing this later
 use crate::lobby::Lobby; // as well as this
-use actix::{Actor, Addr, Running, StreamHandler};
+use actix::{Actor, Addr, Running, StreamHandler, WrapFuture, ActorFuture, ContextFutureSpawner};
 use actix::{AsyncContext, Handler};
 use actix_web_actors::ws;
 use actix_web_actors::ws::Message::Text;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
+
+
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 ```
 
 
@@ -90,13 +90,12 @@ We'll write a quick `new` trait so that we can spin up the socket a little bit e
 
 ```
 impl WsConn {
-    pub fn new(ip: SocketAddr, room: Uuid, lobby: Addr<Lobby>) -> WsConn {
+    pub fn new(room: Uuid, lobby: Addr<Lobby>) -> WsConn {
         WsConn {
             id: Uuid::new_v4(),
-            ip,
             room,
             hb: Instant::now(),
-            addr: lobby,
+            lobby_addr: lobby,
         }
     }
 }
@@ -176,7 +175,7 @@ impl WsConn {
         ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
             if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
                 println!("Disconnecting failed heartbeat");
-                act.lobby_addr.do_send(Disconnect { id: act.id, room: act.room });
+                act.lobby_addr.do_send(Disconnect { id: act.id, room_id: act.room });
                 ctx.stop();
                 return;
             }
@@ -217,7 +216,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsConn {
                 id: self.id,
                 msg: s,
                 room_id: self.room
-            },
+            }),
             Err(e) => panic!(e),
         }
     }
@@ -311,11 +310,21 @@ pub struct ClientActorMessage {
 }
 ```
 
-That's it! That's the messages in a nutshell. 
+Defining messages for actors is super easy. One of my favorite parts about the actor framework is if you need to get data from one Actor to another, creating a message or adding data to an existing message is super easy.
 
 ## lobby.rs
 
-we're almost done! Now, we have the actual lobby to write. Like we've said, the lobby is an Actor, but the actor is a plain old struct. Here's that struct:
+First, the imports for `lobby.rs`:
+
+```
+use crate::messages::{ClientActorMessage, Connect, Disconnect, WsMessage};
+use actix::prelude::{Actor, Context, Handler, Recipient};
+use std::collections::{HashMap, HashSet};
+use uuid::Uuid;
+
+```
+
+we're almost done! Now, we have the actual lobby to write. Like we've said, the lobby is an Actor, but the actor is a plain old struct. Here's that struct (to be placed in `lobby.rs`):
 
 ```
 type Socket = Recipient<WsMessage>;
@@ -445,9 +454,9 @@ Finally, we open the mailbox for clients to send messages to the lobby for the l
 impl Handler<ClientActorMessage> for Lobby {
     type Result = ();
 
-    fn handle(&mut self, msg: ClientActorMessage, ctx: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: ClientActorMessage, _: &mut Context<Self>) -> Self::Result {
         if msg.msg.starts_with("\\w") {
-            if let Some(id_to) = msg.msg.split(" ").collect::<Vec<&str>>().get(1) {
+            if let Some(id_to) = msg.msg.split(' ').collect::<Vec<&str>>().get(1) {
                 self.send_message(&msg.msg, &Uuid::parse_str(id_to).unwrap());
             }
         } else {
@@ -496,6 +505,16 @@ We define a route that just has a group id (should be a valid uuid) as a path pa
 Our last step is to register the Lobby as shared data so we can get it like we just did (`srv: Data<Addr<Lobby>>`). Your main.rs should look like the following:
 
 ```
+mod ws;
+mod lobby;
+use lobby::Lobby;
+mod messages;
+mod start_connection;
+use start_connection::start_connection as start_connection_route;
+use actix::Actor;
+
+use actix_web::{App, HttpServer};
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let chat_server = Lobby::default().start(); //create and spin up a lobby
