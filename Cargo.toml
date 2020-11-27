@@ -1,0 +1,16 @@
+[package]
+name = "ws-demo"
+version = "0.1.0"
+authors = ["antholeole <antholeinik@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web="3.2.0" 
+actix-web-actors="3"
+actix = "0.10.0"
+uuid = { version = "0.8", features = ["v4", "serde"] }
+
+# optional
+listenfd = "0.3"
