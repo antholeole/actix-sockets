@@ -17,7 +17,7 @@ Video version of this tutorial coming out soon! If you want to get notified when
 
 first, run `cargo init ws-demo` or something similar. then, go to your `Cargo.toml` and make sure you depend on these packages: 
 
-```
+```toml
 [dependencies]
 actix-web="3.2.0" # duh
 actix-web-actors="3" # actors specific to web
@@ -49,7 +49,7 @@ Forewarning: we're going to be writing it one file at a time, rather than jumpin
 
 the first step will be to define our WebSocket object. create a file called `ws.rs`. You'll need the following imports:
 
-```
+```rust
 use actix::{fut, ActorContext};
 use crate::messages::{Disconnect, Connect, WsMessage, ClientActorMessage}; //We'll be writing this later
 use crate::lobby::Lobby; // as well as this
@@ -70,7 +70,7 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 Define a struct with the following signature: 
 
-```
+```rust
 pub struct WsConn {
     room: Uuid,
     lobby_addr: Addr<Lobby>,
@@ -88,7 +88,7 @@ the fields are as follows:
 ### 'new'
 We'll write a quick `new` trait so that we can spin up the socket a little bit easier:
 
-```
+```rust
 impl WsConn {
     pub fn new(room: Uuid, lobby: Addr<Lobby>) -> WsConn {
         WsConn {
@@ -109,7 +109,7 @@ Notice how the `WsConn` is just a plain old Rust struct. to convert it into an a
 
 here's the code in full, and then we'll dissect it:
 
-```
+```rust
 impl Actor for WsConn {
     type Context = ws::WebsocketContext<Self>;
 
@@ -149,7 +149,7 @@ In Started, we begin the heartbeat loop; It's just a function that triggers on a
 
 We also take the address of the lobby and send it a message saying "Hey! I connected. This is the lobby I want to get into, and my id, as well as the address of my mailbox you can reach me at." We send that message **asynchronously**. If we did `do_send` instead of `send`, we'd be sending it _kind of_ synchronously. By kind of, I mean "chuck the message at the mailbox and drive away." `do_send` doesn't care if the message ever sent or got read. `send` needs to be awaited, which is the purpose of this block:
 
-```
+```rust
 .then(|res, _, ctx| {
      match res {
         Ok(_res) => (),
@@ -169,7 +169,7 @@ And that's it! Our `WsConn` is now an Actor.
 
 here's the heartbeat method we were talking about:
 
-```
+```rust
 impl WsConn {
     fn hb(&self, ctx: &mut ws::WebsocketContext<Self>) {
         ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
@@ -192,7 +192,7 @@ all that we do here is ping the client, and wait for a response on an interval. 
 
 This next method is a little bit long, but it's not too complicated:
 
-```
+```rust
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsConn {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         match msg {
@@ -236,7 +236,7 @@ It's a simple pattern match on all the possible WebSocket messages.
 
 ### Responding to text messages
 
-```
+```rust
 impl Handler<WsMessage> for WsConn {
     type Result = ();
 
@@ -258,7 +258,7 @@ And that's it! That is the whole `WsClient`.
 
 create a new file called `messages.rs`. This file will hold all the "messages" that get put into our actor's mailboxes. We use a struct with the two traits: the first is simple, and is just `#[derive(Message)]` that tells us that it's an actor message. The second is `rtype`. That return type must be the same `T` we talked about in the end of the last section. So if we wanted to define a message that returned a string, it'd look like this:
 
-```
+```rust
 #[derive(Message)]
 #[rtype(result = "String")] // result = your type T
 pub struct MyMessage; // they usually carry info, but not for this example
@@ -274,7 +274,7 @@ impl Handler<MyMessage> for MyActor {
 
 And that's it! defining messages is actually pretty easy. Here's the code drop for the message file, with respective comments:
 
-```
+```rust
 use actix::prelude::{Message, Recipient};
 use uuid::Uuid;
 
@@ -316,17 +316,16 @@ Defining messages for actors is super easy. One of my favorite parts about the a
 
 First, the imports for `lobby.rs`:
 
-```
+```rust
 use crate::messages::{ClientActorMessage, Connect, Disconnect, WsMessage};
 use actix::prelude::{Actor, Context, Handler, Recipient};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-
 ```
 
 we're almost done! Now, we have the actual lobby to write. Like we've said, the lobby is an Actor, but the actor is a plain old struct. Here's that struct (to be placed in `lobby.rs`):
 
-```
+```rust
 type Socket = Recipient<WsMessage>;
 
 pub struct Lobby {
@@ -339,7 +338,7 @@ We store the Socket as a simple recepient of a WsMessage. With this setup, we ca
 
 as a helper, we'll implement a default for the lobby:
 
-```
+```rust
 impl Default for Lobby {
     fn default() -> Lobby {
         Lobby {
@@ -352,7 +351,7 @@ impl Default for Lobby {
 
 and now let's write a helper that sends a message to a client. 
 
-```
+```rust
 impl Lobby {
     fn send_message(&self, message: &str, id_to: &Uuid) {
         if let Some(socket_recipient) = self.sessions.get(id_to) {
@@ -371,7 +370,7 @@ This method takes a string and a id, and sends that string to a client with that
 
 Ready for the shortest section in this whole tutorial? To make the lobby an actor, use this following code:
 
-```
+```rust
 impl Actor for Lobby {
     type Context = Context<Self>;
 }
@@ -383,7 +382,7 @@ That's it! We don't care about any lifecycle of the Lobby. We only have one, and
 
 The lobby will get 3 types of messages: Connects, Disconnects, and WsMessage from the clients. Both come from the WsConn lifecycle methods from the actor trait. This part isn't actix specific, but I'll explain the meat of the code.
 
-```
+```rust
 /// Handler for Disconnect message.
 impl Handler<Disconnect> for Lobby {
     type Result = ();
@@ -415,7 +414,7 @@ All we're doing is responding to a disconnect message by either:
 
 Next, we need to respond to the connection message. Again, nearly no logic that is actor specific:
 
-```
+```rust
 impl Handler<Connect> for Lobby {
     type Result = ();
 
@@ -450,7 +449,7 @@ All that is being done here is adding a socket and sending them messages.
 
 Finally, we open the mailbox for clients to send messages to the lobby for the lobby to forward to clients. 
 
-```
+```rust
 impl Handler<ClientActorMessage> for Lobby {
     type Result = ();
 
@@ -474,7 +473,7 @@ And that's the lobby!
 
 First, we have to open up a route that lets us connect to the server. create a file called "start_connection.rs" and put in this route: 
 
-```
+```rust
 use crate::ws::WsConn;
 use crate::lobby::Lobby;
 use actix::Addr;
@@ -504,7 +503,7 @@ We define a route that just has a group id (should be a valid uuid) as a path pa
 
 Our last step is to register the Lobby as shared data so we can get it like we just did (`srv: Data<Addr<Lobby>>`). Your main.rs should look like the following:
 
-```
+```rust
 mod ws;
 mod lobby;
 use lobby::Lobby;
