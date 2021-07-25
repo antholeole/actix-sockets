@@ -1,3 +1,8 @@
+# QUICKSTART:
+
+cargo run, then `wscat -c localhost:8080/c05554ae-b4ee-4976-ac05-97aaf3c98a23`. the route at the end of the connection string is your "lobby". everyone else in that "lobby" can see what you send. Lobby ID MUST be a valid uuid.
+
+
 # WebSockets in Actix Web full tutorial - WebSockets & Actors
 
 This tutorial will walk you through each step of writing a blazingly fast WebSocket client in Actix Web, in depth and with a working repository as refrence.
