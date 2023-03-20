@@ -180,7 +180,6 @@ impl WsConn {
         ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
             if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
                 println!("Disconnecting failed heartbeat");
-                act.lobby_addr.do_send(Disconnect { id: act.id, room_id: act.room });
                 ctx.stop();
                 return;
             }
@@ -191,7 +190,7 @@ impl WsConn {
 }
 ```
 
-all that we do here is ping the client, and wait for a response on an interval. If the response doesn't come, the socket died; send a Disconnect and stop the client.
+all that we do here is ping the client, and wait for a response on an interval. If the response doesn't come, the socket died; stop the client. This triggers the `stopping()` function we defined earlier to be called, such that we disconnect from the lobby.
 
 ### handling WS messages
 
@@ -545,6 +544,3 @@ and boom! Our whole app now shares a single lobby. Here's everything we wrote:
 All in actix web, using actors! To test the client, I'd use a simple websocket for either [chrome](https://chrome.google.com/webstore/detail/simple-websocket-client/pfdhoblngboilpfeibdedpjgfnlcodoo?hl=en) or [firefox](https://addons.mozilla.org/en-US/firefox/addon/simple-websocket-client/). Open multiple tabs and send whispers or broadcasts in differnt lobbies!
 
 Happy WebSocketing!
-
-
-
