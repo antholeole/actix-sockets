@@ -1,6 +1,6 @@
 use actix::{fut, ActorContext, WrapFuture, ContextFutureSpawner, ActorFuture};
 use crate::messages::{Disconnect, Connect, WsMessage, ClientActorMessage};
-use crate::lobby::Lobby; 
+use crate::lobby::Lobby;
 use actix::{Actor, Addr, Running, StreamHandler};
 use actix::{AsyncContext, Handler};
 use actix_web_actors::ws;
@@ -99,8 +99,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsConn {
                 msg: s,
                 room_id: self.room
             }),
-            
-            Err(e) => panic!(e),
+            Err(e) => std::panic::panic_any(e),
         }
     }
 }
